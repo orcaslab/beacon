@@ -1,5 +1,5 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=versal})' | FileCheck %s
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=versal},foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=LEVELS
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=versal})' | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=versal},beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=LEVELS
 
 // An array written at a dynamic index becomes a select per element, each
 // under an equality of the index with the element's own: those compares are

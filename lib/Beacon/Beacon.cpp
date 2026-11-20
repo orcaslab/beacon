@@ -1,24 +1,24 @@
 //===- Beacon.cpp - The targets Beacon maps to and times on ---------------===//
 //
-// Part of the foldsim project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the Beacon project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 
-#include "foldsim/Beacon.h"
-#include "foldsim/Passes.h"
+#include "beacon/Beacon.h"
+#include "beacon/Passes.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include <string>
 
-namespace foldsim {
+namespace beacon {
 #define GEN_PASS_DEF_BEACONMAP
-#include "foldsim/Passes.h.inc"
-} // namespace foldsim
+#include "beacon/Passes.h.inc"
+} // namespace beacon
 
 using namespace mlir;
-using foldsim::BeaconTarget;
+using beacon::BeaconTarget;
 
 namespace {
 
@@ -62,7 +62,7 @@ const BeaconTarget kTargets[] = {
 /// rest of the design, module by module.
 } // namespace
 
-std::string foldsim::beaconMapPipeline(const BeaconTarget &target, bool area,
+std::string beacon::beaconMapPipeline(const BeaconTarget &target, bool area,
                                        unsigned carryBlockSize, llvm::StringRef arrivals) {
   // Cells pack across small modules on a critical path; area keeps every
   // module, so each instance's resources stay its own.
@@ -71,18 +71,18 @@ std::string foldsim::beaconMapPipeline(const BeaconTarget &target, bool area,
            : "hw-flatten-modules{hw-inline-all=false hw-inline-small "
              "hw-inline-with-state hw-small-threshold=300},";
   if (!area && !arrivals.empty())
-    pipeline += "foldsim-boundary-arrivals{file=" + arrivals.str() + "},";
+    pipeline += "beacon-boundary-arrivals{file=" + arrivals.str() + "},";
   if (!area)
     pipeline += "hw.module(hw-bypass-inner-symbols,canonicalize,cse,"
                 "comb-balance-mux,";
-  pipeline += "foldsim-lower-equality,foldsim-lower-constant-division,"
+  pipeline += "beacon-lower-equality,beacon-lower-constant-division,"
               "hw-aggregate-to-comb,";
   // For depth, the equalities hw-aggregate-to-comb makes of an array written
   // at a dynamic index (its element selects) are LUT logic too, as Vivado
-  // decodes an index: foldsim-lower-equality runs again and finds only those.
+  // decodes an index: beacon-lower-equality runs again and finds only those.
   if (!area)
-    pipeline += "foldsim-lower-equality,";
-  pipeline += "cse,foldsim-fold-zero-width,"
+    pipeline += "beacon-lower-equality,";
+  pipeline += "cse,beacon-fold-zero-width,"
               "convert-comb-to-synth{additional-legal-ops=comb.add,comb.sub,"
               "comb.icmp,comb.mul,comb.divu,comb.divs,comb.modu,comb.mods},"
               "cse,canonicalize,synth-lower-word-to-bits,cse,";
@@ -106,23 +106,23 @@ namespace {
 
 std::string mapPipeline(const BeaconTarget &target, bool area,
                         unsigned carryBlockSize, llvm::StringRef arrivals) {
-  return foldsim::beaconMapPipeline(target, area, carryBlockSize, arrivals);
+  return beacon::beaconMapPipeline(target, area, carryBlockSize, arrivals);
 }
 
-struct BeaconMapPass : public foldsim::impl::BeaconMapBase<BeaconMapPass> {
+struct BeaconMapPass : public beacon::impl::BeaconMapBase<BeaconMapPass> {
   using BeaconMapBase::BeaconMapBase;
 
   void getDependentDialects(DialectRegistry &registry) const override {
     OpPassManager pm(ModuleOp::getOperationName());
-    if (const BeaconTarget *t = foldsim::lookupBeaconTarget(target))
+    if (const BeaconTarget *t = beacon::lookupBeaconTarget(target))
       if (succeeded(parsePassPipeline(mapPipeline(*t, area, carryBlockSize, arrivals), pm)))
         pm.getDependentDialects(registry);
   }
 
   void runOnOperation() override {
-    const BeaconTarget *t = foldsim::lookupBeaconTarget(target);
+    const BeaconTarget *t = beacon::lookupBeaconTarget(target);
     if (!t) {
-      foldsim::emitUnknownBeaconTarget(getOperation(), target);
+      beacon::emitUnknownBeaconTarget(getOperation(), target);
       return signalPassFailure();
     }
     OpPassManager pm(ModuleOp::getOperationName());
@@ -134,7 +134,7 @@ struct BeaconMapPass : public foldsim::impl::BeaconMapBase<BeaconMapPass> {
 
 } // namespace
 
-namespace foldsim {
+namespace beacon {
 
 const BeaconTarget *lookupBeaconTarget(llvm::StringRef name) {
   for (const BeaconTarget &target : kTargets)
@@ -150,4 +150,4 @@ void emitUnknownBeaconTarget(Operation *op, llvm::StringRef name) {
     diag << " " << target.name;
 }
 
-} // namespace foldsim
+} // namespace beacon

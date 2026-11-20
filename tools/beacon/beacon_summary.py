@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Summarize a Beacon run (foldsim-estimate-timing, foldsim-estimate-area)
+"""Summarize a Beacon run (beacon-estimate-timing, beacon-estimate-area)
 for logic_gate.
 
 Beacon writes one row per end point bit: the logic levels of its longest
@@ -26,7 +26,7 @@ units, the bits a combinational path from outside the instance reaches.
 A unit is an end point's instance path with generate indices folded
 (g_banks_3_bank -> g_banks_*_bank), so one deep bank reads as one unit.
 
-  usage: beacon_summary.py <run dir> --top <module> [--output-dir <dir>]
+  usage: beacon summary <run dir> --top <module> [--output-dir <dir>]
 """
 
 import argparse

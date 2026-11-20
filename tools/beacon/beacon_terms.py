@@ -2,24 +2,24 @@
 """Beacon's routing terms: a timing estimate per end point from its logic levels, its path's largest fanout and
 whether it crosses an SLR, calibrated on a placed V80 build.
 
-Beacon (foldsim-estimate-timing) counts logic levels the way Vivado does, and its rule of thumb (at most 18 levels at
+Beacon (beacon-estimate-timing) counts logic levels the way Vivado does, and its rule of thumb (at most 18 levels at
 200 MHz) assumes short nets. On a folded design two things a level count cannot see set the period instead
 (b4e at 200 MHz, 11-07: 90 % of each failing path was route, at 6-7 levels):
 
 - fanout: a fold's slot controls (instance index, state pass) address and enable every LUT of a region's stores, nets
   of thousands of pins (the `fanout` column, which counts a memory port's control bit as every pin of the mapped
-  memory, foldsim/MemoryLoads.h);
+  memory, beacon/MemoryLoads.h);
 - SLR crossings: a path between SLR groups, or inside a group that does not fit its SLR and so spills over a
   boundary, pays a super long line, the clock skew between SLRs and the inter-SLR compensation.
 
-  foldsim_beacon_terms.py fit <sample.tsv>[=<period ns>] ... -o <calibration.json> [--crossings count|flag]
+  beacon_terms.py fit <sample.tsv>[=<period ns>] ... -o <calibration.json> [--crossings count|flag]
       least squares of placed builds' path delays (requirement minus slack) on levels, log2 fanout and SLR changes:
       one row per path, Vivado's columns (slack, levels, max_fanout, slr_changes, and requirement where the sample
       has it, else the period given after `=`, else --period-ns; see f12_1107/cal/sample.tcl). Several samples (one
       per build) fit together, each also scored with the others' fit (leave one out). The crossing term counts the
       path's SLR changes (`count`, the default: a path through a copy spread over SLRs crosses two or three times;
       y8r1di 11-07: bias -1.89 ns with a flag, -0.45 with the count) or only whether it crosses (`flag`).
-  foldsim_beacon_terms.py score <screen dir> --calibration <json> [--schedule schedule.txt --slr-region <json|v80>]
+  beacon_terms.py score <screen dir> --calibration <json> [--schedule schedule.txt --slr-region <json|v80>]
                                 [--period-ns 5.0] [--top N]
       each end point of a Beacon screen (endpoints.csv, instances.csv) estimated in ns and in equivalent levels
       ((ns - intercept) / ns per level); its SLR changes: between SLR groups (foldsim_slr<g>) the groups' distance
@@ -101,7 +101,7 @@ def fit(a):
 
 def slr_capacities(path):
     if path == 'v80':
-        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'foldsim_v80_slr.json')
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibrations', 'v80_slr.json')
     region = json.load(open(path))
     return [(s['name'], region['margin'] * s['luts'] * region['sites_per_lut']) for s in region['slrs']]
 
@@ -171,7 +171,7 @@ def main():
     f.add_argument('--period-ns', type=float, default=5.0)
     s = sub.add_parser('score')
     s.add_argument('screen')
-    s.add_argument('--calibration', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'foldsim_v80_timing.json'))
+    s.add_argument('--calibration', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibrations', 'v80_timing.json'))
     s.add_argument('--schedule')
     s.add_argument('--slr-region')
     s.add_argument('--named', action='store_true', help='the floorplan assigns group g to the g-th SLR')

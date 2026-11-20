@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{top=Top report= paths=- path-levels=1})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{top=Top report= paths=- path-levels=1})' -o /dev/null | FileCheck %s
 
 // Both bits of b come from a through two LUTs: one path, of 2 bits, from
 // the end point back to its start, each op with its source line. s is one

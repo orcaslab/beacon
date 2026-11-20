@@ -1,28 +1,28 @@
 //===- BeaconOps.h - What Beacon's passes read off an op -------*- C++ -*-===//
 //
-// Part of the foldsim project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the Beacon project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
-// The widths foldsim-estimate-timing and foldsim-estimate-area read off a
+// The widths beacon-estimate-timing and beacon-estimate-area read off a
 // value, so the two passes agree on which products and dividers are tables.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef FOLDSIM_LIB_TRANSFORMS_BEACONOPS_H
-#define FOLDSIM_LIB_TRANSFORMS_BEACONOPS_H
+#ifndef BEACON_BEACONOPS_H
+#define BEACON_BEACONOPS_H
 
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HW/HWOps.h"
 
-namespace foldsim {
+namespace beacon {
 namespace beacon {
 
 /// The most variable bits a product or a divider has for synthesis to write
 /// it out as a table over them; also the dividend widths whose quotient and
-/// remainder by a constant foldsim-lower-constant-division writes out.
+/// remainder by a constant beacon-lower-constant-division writes out.
 constexpr unsigned kMaxTableBits = 10;
 
 inline unsigned widthOf(mlir::Value value) {
@@ -57,6 +57,6 @@ inline unsigned variableBits(mlir::Value value) {
 }
 
 } // namespace beacon
-} // namespace foldsim
+} // namespace beacon
 
-#endif // FOLDSIM_LIB_TRANSFORMS_BEACONOPS_H
+#endif // BEACON_BEACONOPS_H

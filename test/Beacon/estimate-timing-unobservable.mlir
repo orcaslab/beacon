@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report=- top=Top})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report=- top=Top})' -o /dev/null | FileCheck %s
 
 // A counter that only counts itself reaches no output: Vivado removes it, so
 // its deep increment is no end point. Nor is a memory nothing reads, or the

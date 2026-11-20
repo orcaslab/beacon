@@ -12,12 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""beacon -- run Beacon, foldsim's logic-level and area count, on a Vortex
-netlist, and read its results by RTL unit or against Vivado.
+"""beacon -- run Beacon, the logic-level and area count of an elaborated CIRCT
+netlist (Vortex, a FoldSim fold, any RTL), and read its results by RTL unit
+or against Vivado.
+
+beacon-opt runs the passes: BEACON_OPT names it, else the beacon-opt installed
+beside this script, else the one on PATH.
 
   run           map an elaborated CIRCT netlist and count the logic levels of
-                every end point (foldsim-estimate-timing) and its LUTs,
-                flip-flops, memories and DSPs (foldsim-estimate-area)
+                every end point (beacon-estimate-timing) and its LUTs,
+                flip-flops, memories and DSPs (beacon-estimate-area)
   summarize     the deep end points grouped by RTL unit, optionally beside
                 Vivado's failing ones
   paths         every deep path op by op, by RTL unit (one per pair of
@@ -34,23 +38,23 @@ netlist, and read its results by RTL unit or against Vivado.
   score         rank a run's registers by the calibrated near-critical
                 probability, with predicted slack (pure Python; advisory)
 
-  ci/beacon.py run gen/design.mlir runs/full
-  ci/beacon.py run runs/full/mapped.mlirbc runs/socket \\
+  beacon run gen/design.mlir runs/full
+  beacon run runs/full/mapped.mlirbc runs/socket \\
       top=VX_socket__lift black-boxes=VX_core__lift
-  ci/beacon.py summarize runs/full --min-levels 12
-  ci/beacon.py paths runs/full --unit lsu_unit
-  ci/beacon.py diff runs/parent runs/change --min-levels 8
-  ci/beacon.py validate runs/socket ep.csv --native VX_socket__lift=dut
-  ci/beacon.py run --keep VX_elastic_buffer design.mlir runs/eb \\
+  beacon summarize runs/full --min-levels 12
+  beacon paths runs/full --unit lsu_unit
+  beacon diff runs/parent runs/change --min-levels 8
+  beacon validate runs/socket ep.csv --native VX_socket__lift=dut
+  beacon run --keep VX_elastic_buffer design.mlir runs/eb \\
       port-modules=VX_elastic_buffer
-  ci/beacon.py buffers runs/eb
-  ci/beacon.py calibrate cal.json --build build_core/beacon ep.csv core
-  ci/beacon.py score build_core/beacon cal.json --top 30
+  beacon buffers runs/eb
+  beacon calibrate cal.json --build build_core/beacon ep.csv core
+  beacon score build_core/beacon cal.json --top 30
 
 A Vivado end point table is a CSV of `slack,levels,logic,net,start,end`, one
 row per failing end point (a gate's ep.csv). The DUT flow and logic_gate run
-Beacon through the Makefiles instead (make -C hw/syn/xilinx/dut <dut>-beacon,
-ci/logic_gate.py); see docs/designs/beacon.md.
+Beacon through its Makefiles instead (make -C hw/syn/xilinx/dut <dut>-beacon,
+ci/logic_gate.py); see docs/beacon.md.
 """
 import argparse
 import collections
@@ -63,6 +67,41 @@ import resource
 import subprocess
 import sys
 import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def beacon_opt():
+    """The beacon-opt to run: $BEACON_OPT, else the one installed beside this
+    script, else the one on PATH."""
+    if os.environ.get("BEACON_OPT"):
+        return os.environ["BEACON_OPT"]
+    beside = os.path.join(HERE, "beacon-opt")
+    return beside if os.path.isfile(beside) else "beacon-opt"
+
+
+def cmd_summary(args):
+    """beacon_summary.py's tables for a gate (beacon_summary.csv, ...)."""
+    import beacon_summary
+    sys.argv = ["beacon summary", args.run_dir, "--top", args.top,
+                "--output-dir", args.output_dir]
+    beacon_summary.main()
+    return 0
+
+
+def cmd_version(args):
+    rev = "unknown"
+    try:
+        rev = subprocess.run(["git", "-C", HERE, "describe", "--always",
+                              "--dirty", "--abbrev=9"], capture_output=True,
+                             text=True).stdout.strip() or rev
+    except OSError:
+        pass
+    if os.path.isfile(os.path.join(HERE, "beacon_version.txt")):
+        rev = open(os.path.join(HERE, "beacon_version.txt")).read().strip()
+    print("beacon", rev)
+    return subprocess.call([beacon_opt(), "--version"])
+
 
 # Fold classes of the static fold: module in the design -> cell prefix in
 # the folded netlist.
@@ -194,7 +233,7 @@ def unit(key):
 def cmd_run(args):
     """Map (unless the input is already mapped bytecode), then count levels;
     from a netlist, also map for area and count it."""
-    opt = os.environ.get("FOLDSIM_OPT") or "foldsim-opt"
+    opt = beacon_opt()
     os.makedirs(args.out, exist_ok=True)
     # Map to the cells of the target the levels are counted on.
     target = next((o for o in args.options if o.startswith("target=")),
@@ -206,11 +245,11 @@ def cmd_run(args):
     threads = ["--mlir-disable-threading"] if args.no_threads else []
     if not args.design.endswith(".mlirbc"):
         mapped = os.path.join(args.out, "mapped.mlirbc")
-        pipeline = "foldsim-beacon-map{%s}" % target
+        pipeline = "beacon-map{%s}" % target
         if args.keep:
             # Keep these modules' instances through inlining, so their ports
             # can be reported (ports=, port-modules=).
-            pipeline = "foldsim-keep-modules{modules=%s},%s" % (
+            pipeline = "beacon-keep-modules{modules=%s},%s" % (
                 ",".join(args.keep), pipeline)
         steps.append(("map", [opt, args.design, "--emit-bytecode", "-o", mapped,
                               "--pass-pipeline=builtin.module(%s)" % pipeline]
@@ -224,7 +263,7 @@ def cmd_run(args):
     opts = " ".join(files + args.options)
     steps.append(("levels", [opt, mapped, "-o", os.devnull,
                              "--pass-pipeline=builtin.module("
-                             "foldsim-estimate-timing{%s})" % opts]))
+                             "beacon-estimate-timing{%s})" % opts]))
     if not args.design.endswith(".mlirbc"):
         # Area reads the netlist mapped again, for area.
         top = [o for o in args.options if o.startswith(("top=", "black-boxes="))]
@@ -233,8 +272,8 @@ def cmd_run(args):
                          "report=%s/area.txt" % args.out] + top)
         steps.append(("area", [opt, args.design, "-o", os.devnull,
                                "--pass-pipeline=builtin.module("
-                               "foldsim-beacon-map{%s area},"
-                               "foldsim-estimate-area{%s})" % (target, area)]
+                               "beacon-map{%s area},"
+                               "beacon-estimate-area{%s})" % (target, area)]
                       + threads))
     for name, cmd in steps:
         start = time.time()
@@ -1348,7 +1387,7 @@ def main():
     p.add_argument("design", help="elaborated netlist (.mlir), or mapped bytecode (.mlirbc)")
     p.add_argument("out", help="output directory")
     p.add_argument("options", nargs="*",
-                   help="foldsim-estimate-timing options (top=, target=, black-boxes=, "
+                   help="beacon-estimate-timing options (top=, target=, black-boxes=, "
                    "trace=, retime-levels=, ...); the design is mapped to the "
                    "cells of target= (versal by default)")
     p.add_argument("--no-threads", action="store_true",
@@ -1461,6 +1500,18 @@ def main():
     p.add_argument('run_dir')
     p.add_argument('--top', help="top module (default: the run's design)")
     p.set_defaults(fn=cmd_ties)
+
+    p = sub.add_parser("summary", help="a run's tables for a gate "
+                       "(beacon_summary.csv, beacon_units.json, beacon_paths.txt, "
+                       "beacon_area.txt)")
+    p.add_argument('run_dir')
+    p.add_argument('--top', required=True)
+    p.add_argument('--output-dir', default=".")
+    p.set_defaults(fn=cmd_summary)
+
+    p = sub.add_parser("version", help="Beacon's revision and beacon-opt's "
+                       "(CIRCT's) version")
+    p.set_defaults(fn=cmd_version)
 
     args = ap.parse_args()
     return args.fn(args) or 0

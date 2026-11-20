@@ -1,6 +1,6 @@
 //===- MemoryLoads.h - The pins a memory port's control bits drive --------===//
 //
-// Part of the foldsim project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the Beacon project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
@@ -8,19 +8,19 @@
 //
 // One model of how many pins a bit of a memory port's address, enable or mask
 // drives once synthesis maps the memory, shared by foldsim-replicate-controls
-// (which bounds those nets by replicas) and foldsim-estimate-timing (which
+// (which bounds those nets by replicas) and beacon-estimate-timing (which
 // reports a path's largest fanout for Beacon's fanout term).
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef FOLDSIM_MEMORYLOADS_H
-#define FOLDSIM_MEMORYLOADS_H
+#ifndef BEACON_MEMORYLOADS_H
+#define BEACON_MEMORYLOADS_H
 
 #include "circt/Dialect/SV/SVAttributes.h"
 #include "circt/Dialect/Seq/SeqOps.h"
 #include "llvm/Support/MathExtras.h"
 
-namespace foldsim {
+namespace beacon {
 
 /// A memory this shallow is LUTs or flops whatever its read latency.
 constexpr uint64_t kLutMemoryDepth = 64;
@@ -65,6 +65,6 @@ inline uint64_t maskGrain(circt::seq::FirMemType type) {
   return maskWidth && *maskWidth ? type.getWidth() / *maskWidth : 1;
 }
 
-} // namespace foldsim
+} // namespace beacon
 
-#endif // FOLDSIM_MEMORYLOADS_H
+#endif // BEACON_MEMORYLOADS_H

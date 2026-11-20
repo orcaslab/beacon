@@ -1,0 +1,13 @@
+# The driver end to end: `beacon run` maps a netlist and counts its levels and
+# area (beacon-map, beacon-estimate-timing, beacon-estimate-area through
+# beacon-opt beside it), and `beacon summary` writes the gate's tables.
+# RUN: rm -rf %t && mkdir -p %t
+# RUN: python3 %beacon_tools/beacon run %S/Inputs/run/top.mlir %t/run top=Top target=versal path-levels=1 > %t/run.log
+# RUN: python3 %beacon_tools/beacon summary %t/run --top Top --output-dir %t/run | FileCheck %s --check-prefix=SUM
+# RUN: FileCheck %s --check-prefix=CSV < %t/run/beacon_summary.csv
+# RUN: FileCheck %s --check-prefix=EP < %t/run/endpoints.csv
+# SUM: beacon: Top max 1 levels, 0 end point bits >= 12
+# SUM: beacon: Top 24 LUTs (0 distributed RAM), 82 FFs
+# CSV: top,max_levels,deep_endpoints,watch_endpoints,endpoints,lut,ff,lutram,bram,uram,dsp
+# CSV-NEXT: Top,1,0,0,146,24,82,0,0.0,0,0
+# EP: levels,retimed,kind,start_kind,fanout,crossings,start_inst,start,end_inst,end,in_fanout

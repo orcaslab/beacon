@@ -1,5 +1,5 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-keep-modules{modules=G0,G1},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},foldsim-estimate-timing{top=Top report= crossings=- port-modules=G0,G1})' -o /dev/null | not grep '^g1,level,0,0,[0-9]*,[0-9]*,s0'
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-keep-modules{modules=G0,G1},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},foldsim-estimate-timing{top=Top report= crossings=- port-modules=G0,G1})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-keep-modules{modules=G0,G1},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},beacon-estimate-timing{top=Top report= crossings=- port-modules=G0,G1})' -o /dev/null | not grep '^g1,level,0,0,[0-9]*,[0-9]*,s0'
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-keep-modules{modules=G0,G1},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},beacon-estimate-timing{top=Top report= crossings=- port-modules=G0,G1})' -o /dev/null | FileCheck %s
 
 // Partitions: each kept G0/G1 instance and the rest (`level`). A crossing is a
 // cell bit read in another partition; a port that only passes wires (G1's

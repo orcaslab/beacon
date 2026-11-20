@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=virtexuplusHBM},foldsim-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=virtexuplusHBM},beacon-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
 
 // An enable computed from eight register bits is a LUT of its own, and it
 // loads the last cell of each of the 16 bits it enables.

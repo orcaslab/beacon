@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --foldsim-lower-equality | FileCheck %s
+// RUN: beacon-opt %s --beacon-lower-equality | FileCheck %s
 
 // CHECK-LABEL: hw.module @Cmp
 hw.module @Cmp(in %a : i3, in %b : i3, out eq : i1, out ne : i1, out lt : i1) {

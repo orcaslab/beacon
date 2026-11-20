@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
 
 // A register that only holds its value, whatever its enables, is no end
 // point: Vivado removes it. A deep enable logic before it does not count.

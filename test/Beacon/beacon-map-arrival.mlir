@@ -1,5 +1,5 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{carry-block-size=8},foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=ARR
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map,foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=BLIND
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{carry-block-size=8},beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=ARR
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map,beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=BLIND
 
 // A 33-bit adder's carry out selects between two 216-input parities, three
 // LUT levels each. The carry arrives at level 6 (a LUT and five carry

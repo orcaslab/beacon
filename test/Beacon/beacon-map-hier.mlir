@@ -1,6 +1,6 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{carry-block-size=8},foldsim-estimate-timing{output=- report= top=Top arrivals=%t.json})' -o /dev/null | FileCheck %s --check-prefix=ONE
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{carry-block-size=8},beacon-estimate-timing{output=- report= top=Top arrivals=%t.json})' -o /dev/null | FileCheck %s --check-prefix=ONE
 // RUN: FileCheck %s --check-prefix=JSON < %t.json
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{carry-block-size=8 arrivals=%t.json},foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=TWO
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{carry-block-size=8 arrivals=%t.json},beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=TWO
 
 // The probe of beacon-map-arrival.mlir across module boundaries: a 33-bit
 // carry (level 6) selects between two 216-input parities (three levels
@@ -8,7 +8,7 @@
 // the selected carry is the output of `Carry`. Mapped apart, each module
 // takes its boundary at 0 and buries the carry under a parity cone (8);
 // with the first mapping's arrival times at the ports, the second keeps it
-// for the last LUT (7), as the flattened design maps. The registers are outputs: foldsim-estimate-timing leaves
+// for the last LUT (7), as the flattened design maps. The registers are outputs: beacon-estimate-timing leaves
 // out end points nothing observable reads (upstream c0363d0).
 // ONE-DAG: 8,{{.*}},1,o.d[0]
 // ONE-DAG: 8,{{.*}},0,p.d[0]

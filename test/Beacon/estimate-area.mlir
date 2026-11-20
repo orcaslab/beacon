@@ -1,10 +1,10 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 output=- report=})' -o /dev/null | FileCheck %s --check-prefix=U55C
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=versal lut-scale=1 report=-})' -o /dev/null | FileCheck %s --check-prefix=V80
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 memories=- report=})' -o /dev/null | FileCheck %s --check-prefix=MEM
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 black-boxes=Leaf output=- report=})' -o /dev/null | FileCheck %s --check-prefix=STUB
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{target=virtexuplusHBM modules=- state-threads=1,4 report=})' -o /dev/null | FileCheck %s --check-prefix=STATE
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=virtexuplusHBM report=-})' -o /dev/null | FileCheck %s --check-prefix=SCALED
-// RUN: not foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-area{top=Top target=agilex})' -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNKNOWN
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 output=- report=})' -o /dev/null | FileCheck %s --check-prefix=U55C
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=versal lut-scale=1 report=-})' -o /dev/null | FileCheck %s --check-prefix=V80
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 memories=- report=})' -o /dev/null | FileCheck %s --check-prefix=MEM
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=virtexuplusHBM lut-scale=1 black-boxes=Leaf output=- report=})' -o /dev/null | FileCheck %s --check-prefix=STUB
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{target=virtexuplusHBM modules=- state-threads=1,4 report=})' -o /dev/null | FileCheck %s --check-prefix=STATE
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=virtexuplusHBM report=-})' -o /dev/null | FileCheck %s --check-prefix=SCALED
+// RUN: not beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-area{top=Top target=agilex})' -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNKNOWN
 
 // The design: 16 adder LUTs, one truth table, 16 LUTs of a product by a
 // constant, 6 of a 3 x 3 product zero-extended to 16 bits (a table per bit

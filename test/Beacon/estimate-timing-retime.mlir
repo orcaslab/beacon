@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top retime-levels=4})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top retime-levels=4})' -o /dev/null | FileCheck %s
 
 // Three stages of six LUTs each, a -> f -> g -> h, retimed to four levels.
 // f's start register a moves forward: its input stage is empty.

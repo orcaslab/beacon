@@ -1,6 +1,6 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=V80
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s --check-prefix=U55C
-// RUN: not foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top target=agilex})' -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNKNOWN
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s --check-prefix=V80
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s --check-prefix=U55C
+// RUN: not beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top target=agilex})' -o /dev/null 2>&1 | FileCheck %s --check-prefix=UNKNOWN
 
 // A 16 x 16 product into a register: one DSP, which absorbs the register.
 // V80-DAG: 1,1,d,reg,{{[0-9]+}},0,0,{{[ab]}}[{{[0-9]+}}],0,p16.d[0]

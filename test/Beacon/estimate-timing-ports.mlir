@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-keep-modules{modules=Buf,Pass},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},foldsim-estimate-timing{top=Top report= ports=- port-modules=Buf,Pass})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-keep-modules{modules=Buf,Pass},hw-flatten-modules{hw-inline-all=false hw-inline-small hw-inline-with-state hw-small-threshold=300},beacon-estimate-timing{top=Top report= ports=- port-modules=Buf,Pass})' -o /dev/null | FileCheck %s
 
 // Buf_1 is a specialization of Buf, kept through inlining; Leaf is inlined.
 // Its input arrives 2 levels deep, and its output is registered: no bit of it

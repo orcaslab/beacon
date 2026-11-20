@@ -1,7 +1,7 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map,foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=virtexuplusHBM},foldsim-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=asap7},foldsim-estimate-timing{output=- report= top=Top target=asap7})' -o /dev/null | FileCheck %s --check-prefix=ASAP7
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=virtexuplusHBM area},foldsim-estimate-area{output=- report= top=Top target=virtexuplusHBM lut-scale=1})' -o /dev/null | FileCheck %s --check-prefix=AREA
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map,beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=virtexuplusHBM},beacon-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=asap7},beacon-estimate-timing{output=- report= top=Top target=asap7})' -o /dev/null | FileCheck %s --check-prefix=ASAP7
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=virtexuplusHBM area},beacon-estimate-area{output=- report= top=Top target=virtexuplusHBM lut-scale=1})' -o /dev/null | FileCheck %s --check-prefix=AREA
 
 // An equality compare of two bits and the AND after it pack into one LUT6,
 // across the boundary of the inlined `Eq`.

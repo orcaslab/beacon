@@ -1,8 +1,8 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=versal},foldsim-estimate-timing{output=- report= top=Top target=versal})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=versal},beacon-estimate-timing{output=- report= top=Top target=versal})' -o /dev/null | FileCheck %s
 
 // A register bit that addresses a memory drives a pin of every LUT of it, a
 // fanout that the route, not the logic levels, makes slow (Beacon's fanout
-// term; foldsim/MemoryLoads.h, the model foldsim-replicate-controls bounds):
+// term; beacon/MemoryLoads.h, the model foldsim-replicate-controls bounds):
 // the index of a 256 x 64 memory read asynchronously (distributed RAM however
 // deep) drives 64 x 8 = 512 pins with its write address and 512 with its read
 // address; its write-address end point and the end point after the read

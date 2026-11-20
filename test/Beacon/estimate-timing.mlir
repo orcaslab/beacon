@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-estimate-timing{output=- report= top=Top})' -o /dev/null | FileCheck %s
 
 // CHECK: levels,retimed,kind,start_kind,fanout,crossings,start_inst,start,end_inst,end
 // The adder's bit 15: a LUT and the CARRY8s of blocks 0 and 1 from bit 0.

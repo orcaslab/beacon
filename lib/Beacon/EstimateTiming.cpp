@@ -1,13 +1,13 @@
 //===- EstimateTiming.cpp - rank register-to-register paths by depth ------===//
 //
-// Part of the foldsim project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the Beacon project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
 // Beacon: the logic levels of the longest path to every end point of an
-// elaborated design mapped to a target's cells (foldsim/Beacon.h), counted as
+// elaborated design mapped to a target's cells (beacon/Beacon.h), counted as
 // Vivado counts them on the target's FPGA, or in cell stages on an ASIC. It
 // finds the depth outliers before a Vivado run; it predicts neither slack nor
 // wire delay.
@@ -15,9 +15,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "BeaconOps.h"
-#include "foldsim/Beacon.h"
-#include "foldsim/MemoryLoads.h"
-#include "foldsim/Passes.h"
+#include "beacon/Beacon.h"
+#include "beacon/MemoryLoads.h"
+#include "beacon/Passes.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/Seq/SeqOps.h"
@@ -37,26 +37,24 @@
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 
-namespace foldsim {
+namespace beacon {
 #define GEN_PASS_DEF_BOUNDARYARRIVALS
 #define GEN_PASS_DEF_ESTIMATETIMING
 #define GEN_PASS_DEF_FOLDZEROWIDTH
 #define GEN_PASS_DEF_KEEPMODULES
 #define GEN_PASS_DEF_LOWEREQUALITY
 #define GEN_PASS_DEF_LOWERCONSTANTDIVISION
-#define GEN_PASS_DEF_SPLITMASKEDMEMORIES
-#define GEN_PASS_DEF_SYNCASYNCRESETS
-#include "foldsim/Passes.h.inc"
-} // namespace foldsim
+#include "beacon/Passes.h.inc"
+} // namespace beacon
 
 using namespace mlir;
 using namespace circt;
-using foldsim::BeaconTarget;
-using foldsim::lookupBeaconTarget;
-using foldsim::beacon::kMaxTableBits;
-using foldsim::beacon::significantBits;
-using foldsim::beacon::variableBits;
-using foldsim::beacon::widthOf;
+using beacon::BeaconTarget;
+using beacon::lookupBeaconTarget;
+using beacon::beacon::kMaxTableBits;
+using beacon::beacon::significantBits;
+using beacon::beacon::variableBits;
+using beacon::beacon::widthOf;
 
 namespace {
 
@@ -167,7 +165,7 @@ struct EndPoint {
 /// An input of a node: the levels from it to the node, and the pins with
 /// which the node loads it: 0 for an adder bit reaching the lower bits'
 /// inputs over the carry chain, not as their load; a distributed-RAM read's
-/// address bit, a pin in every LUT of the memory (foldsim/MemoryLoads.h);
+/// address bit, a pin in every LUT of the memory (beacon/MemoryLoads.h);
 /// else 1.
 struct Edge {
   unsigned in;
@@ -643,7 +641,7 @@ void Timing::operands(unsigned id, SmallVectorImpl<Edge> &edges) {
     // Every LUT of the memory takes the address bit: one node per data bit
     // here, so each loads its share of the memory's pins.
     uint32_t pins = std::max<uint64_t>(
-        1, foldsim::memoryLoads(type, true, type.getWidth()) / type.getWidth());
+        1, beacon::memoryLoads(type, true, type.getWidth()) / type.getWidth());
     for (unsigned bit = 0, e = widthOf(read.getAddress()); bit < e; ++bit)
       add(read.getAddress(), bit, levels, pins);
     if (auto enable = read.getEnable())
@@ -831,7 +829,7 @@ void Timing::addEndPoints(unsigned ctx, Operation *op, StringRef port,
     return;
   // A memory port's address, enable or mask bit is an end point that drives
   // a pin of every LUT (or block RAM) of the memory: its fanout, which the
-  // route, not logic, makes slow (foldsim/MemoryLoads.h).
+  // route, not logic, makes slow (beacon/MemoryLoads.h).
   uint32_t pins = 0;
   if (port != "wd") {
     Value memory;
@@ -844,8 +842,8 @@ void Timing::addEndPoints(unsigned ctx, Operation *op, StringRef port,
     if (auto mem = memory ? memory.getDefiningOp<seq::FirMemOp>() : nullptr) {
       auto type = mem.getType();
       bool mask = port == "wm";
-      pins = foldsim::memoryLoads(type, foldsim::isLutMemory(mem),
-                                  mask ? foldsim::maskGrain(type)
+      pins = beacon::memoryLoads(type, beacon::isLutMemory(mem),
+                                  mask ? beacon::maskGrain(type)
                                        : type.getWidth());
     }
   }
@@ -1727,7 +1725,7 @@ void Timing::writeReport(raw_ostream &os, unsigned topPaths,
 
 namespace {
 struct FoldZeroWidthPass
-    : public foldsim::impl::FoldZeroWidthBase<FoldZeroWidthPass> {
+    : public beacon::impl::FoldZeroWidthBase<FoldZeroWidthPass> {
   void runOnOperation() override {
     getOperation().walk([](Operation *op) {
       if (!isa_and_nonnull<comb::CombDialect>(op->getDialect()) ||
@@ -1745,102 +1743,8 @@ struct FoldZeroWidthPass
   }
 };
 
-struct SyncAsyncResetsPass
-    : public foldsim::impl::SyncAsyncResetsBase<SyncAsyncResetsPass> {
-  void runOnOperation() override {
-    SmallVector<seq::FirRegOp> regs;
-    getOperation().walk([&](seq::FirRegOp reg) {
-      if (reg.getIsAsync())
-        regs.push_back(reg);
-    });
-    for (auto reg : regs) {
-      OpBuilder b(reg);
-      auto sync = seq::FirRegOp::create(
-          b, reg.getLoc(), reg.getNext(), reg.getClk(), reg.getNameAttr(),
-          reg.getReset(), reg.getResetValue(), reg.getInnerSymAttr(),
-          /*isAsync=*/false, reg.getPresetAttr());
-      b.setInsertionPointAfter(sync);
-      auto value = comb::MuxOp::create(b, reg.getLoc(), reg.getReset(),
-                                       reg.getResetValue(), sync);
-      reg.getResult().replaceAllUsesWith(value.getResult());
-      reg.erase();
-    }
-  }
-};
-
-struct SplitMaskedMemoriesPass
-    : public foldsim::impl::SplitMaskedMemoriesBase<SplitMaskedMemoriesPass> {
-  void runOnOperation() override {
-    constexpr unsigned kColumn = 64, kByte = 8;
-    SmallVector<seq::FirMemOp> memories;
-    getOperation().walk([&](seq::FirMemOp memory) {
-      auto type = memory.getType();
-      auto maskWidth = type.getMaskWidth();
-      unsigned width = type.getWidth();
-      if (!maskWidth || *maskWidth * kByte != width || width <= kColumn ||
-          width % kColumn || memory.getInnerSymAttr() || memory.getInit())
-        return;
-      bool split = llvm::all_of(memory->getUsers(), [](Operation *user) {
-        if (auto write = dyn_cast<seq::FirMemWriteOp>(user))
-          return bool(write.getMask());
-        return isa<seq::FirMemReadOp>(user);
-      });
-      if (split)
-        memories.push_back(memory);
-    });
-    for (auto memory : memories) {
-      auto type = memory.getType();
-      unsigned columns = type.getWidth() / kColumn;
-      auto columnType = seq::FirMemType::get(&getContext(), type.getDepth(),
-                                             kColumn, kColumn / kByte);
-      OpBuilder b(memory);
-      SmallVector<Value> parts;
-      for (unsigned c = 0; c < columns; ++c) {
-        StringAttr name;
-        if (auto n = memory.getNameAttr())
-          name = b.getStringAttr(n.getValue() + "_c" + Twine(c));
-        auto part = seq::FirMemOp::create(
-            b, memory.getLoc(), columnType, memory.getReadLatency(),
-            memory.getWriteLatency(), memory.getRuw(), memory.getWuw(), name,
-            {}, {}, memory.getPrefixAttr(), memory.getOutputFileAttr());
-        // A column is the memory's: its storage (the ram_style a storage
-        // rule or the RTL set) goes with it.
-        part->setDialectAttrs(memory->getDialectAttrs());
-        parts.push_back(part);
-      }
-      for (auto *user : llvm::make_early_inc_range(memory->getUsers())) {
-        OpBuilder ub(user);
-        if (auto read = dyn_cast<seq::FirMemReadOp>(user)) {
-          SmallVector<Value> data;
-          for (unsigned c = columns; c-- > 0;)
-            data.push_back(seq::FirMemReadOp::create(
-                ub, read.getLoc(), parts[c], read.getAddress(), read.getClk(),
-                read.getEnable()));
-          read.replaceAllUsesWith(
-              comb::ConcatOp::create(ub, read.getLoc(), data).getResult());
-        } else {
-          auto write = cast<seq::FirMemWriteOp>(user);
-          for (unsigned c = 0; c < columns; ++c) {
-            Value data = comb::ExtractOp::create(ub, write.getLoc(),
-                                                 write.getData(), c * kColumn,
-                                                 kColumn);
-            Value mask = comb::ExtractOp::create(
-                ub, write.getLoc(), write.getMask(), c * (kColumn / kByte),
-                kColumn / kByte);
-            seq::FirMemWriteOp::create(ub, write.getLoc(), parts[c],
-                                       write.getAddress(), write.getClk(),
-                                       write.getEnable(), data, mask);
-          }
-        }
-        user->erase();
-      }
-      memory.erase();
-    }
-  }
-};
-
 struct KeepModulesPass
-    : public foldsim::impl::KeepModulesBase<KeepModulesPass> {
+    : public beacon::impl::KeepModulesBase<KeepModulesPass> {
   using KeepModulesBase::KeepModulesBase;
   void runOnOperation() override {
     for (auto module : getOperation().getOps<hw::HWModuleOp>())
@@ -1851,13 +1755,13 @@ struct KeepModulesPass
 };
 
 struct BoundaryArrivalsPass
-    : public foldsim::impl::BoundaryArrivalsBase<BoundaryArrivalsPass> {
+    : public beacon::impl::BoundaryArrivalsBase<BoundaryArrivalsPass> {
   using BoundaryArrivalsBase::BoundaryArrivalsBase;
   void runOnOperation() override;
 };
 
 struct LowerConstantDivisionPass
-    : public foldsim::impl::LowerConstantDivisionBase<
+    : public beacon::impl::LowerConstantDivisionBase<
           LowerConstantDivisionPass> {
   void runOnOperation() override {
     getOperation().walk([](Operation *op) {
@@ -1918,7 +1822,7 @@ struct LowerConstantDivisionPass
 };
 
 struct LowerEqualityPass
-    : public foldsim::impl::LowerEqualityBase<LowerEqualityPass> {
+    : public beacon::impl::LowerEqualityBase<LowerEqualityPass> {
   void runOnOperation() override {
     getOperation().walk([](comb::ICmpOp cmp) {
       bool equal;
@@ -1963,7 +1867,7 @@ struct LowerEqualityPass
 };
 
 struct EstimateTimingPass
-    : public foldsim::impl::EstimateTimingBase<EstimateTimingPass> {
+    : public beacon::impl::EstimateTimingBase<EstimateTimingPass> {
   using EstimateTimingBase::EstimateTimingBase;
   void runOnOperation() override;
 };
@@ -2029,7 +1933,7 @@ void BoundaryArrivalsPass::runOnOperation() {
   markAllAnalysesPreserved();
 }
 
-FailureOr<int> foldsim::beaconDeepestLevels(ModuleOp design, StringRef top,
+FailureOr<int> beacon::beaconDeepestLevels(ModuleOp design, StringRef top,
                                             const BeaconTarget &target) {
   auto module = design.lookupSymbol<hw::HWModuleOp>(top);
   if (!module)
@@ -2067,7 +1971,7 @@ void EstimateTimingPass::runOnOperation() {
 
   const BeaconTarget *device = lookupBeaconTarget(target);
   if (!device) {
-    foldsim::emitUnknownBeaconTarget(design, target);
+    beacon::emitUnknownBeaconTarget(design, target);
     return signalPassFailure();
   }
   Timing timing(design, blackBoxes, *device);

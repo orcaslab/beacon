@@ -1,13 +1,13 @@
 //===- EstimateArea.cpp - count the cells a design maps to ----------------===//
 //
-// Part of the foldsim project, under the Apache License v2.0 with LLVM Exceptions.
+// Part of the Beacon project, under the Apache License v2.0 with LLVM Exceptions.
 // See https://llvm.org/LICENSE.txt for license information.
 // SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
 //
 //===----------------------------------------------------------------------===//
 //
 // Beacon's area: the LUTs, flip-flops, distributed RAM, block RAM, UltraRAM
-// and DSPs of a design mapped to a target's cells (foldsim/Beacon.h), placed
+// and DSPs of a design mapped to a target's cells (beacon/Beacon.h), placed
 // by the rules Vivado infers them with, per instance of the elaborated design.
 // On an ASIC library, cells, flip-flops and SRAM macros. An estimate before
 // synthesis, not a utilization report.
@@ -15,8 +15,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "BeaconOps.h"
-#include "foldsim/Beacon.h"
-#include "foldsim/Passes.h"
+#include "beacon/Beacon.h"
+#include "beacon/Passes.h"
 #include "circt/Dialect/Comb/CombOps.h"
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/SV/SVAttributes.h"
@@ -38,18 +38,18 @@
 #include <cmath>
 #include <functional>
 
-namespace foldsim {
+namespace beacon {
 #define GEN_PASS_DEF_ESTIMATEAREA
-#include "foldsim/Passes.h.inc"
-} // namespace foldsim
+#include "beacon/Passes.h.inc"
+} // namespace beacon
 
 using namespace mlir;
 using namespace circt;
-using foldsim::BeaconTarget;
-using foldsim::beacon::kMaxTableBits;
-using foldsim::beacon::significantBits;
-using foldsim::beacon::variableBits;
-using foldsim::beacon::widthOf;
+using beacon::BeaconTarget;
+using beacon::beacon::kMaxTableBits;
+using beacon::beacon::significantBits;
+using beacon::beacon::variableBits;
+using beacon::beacon::widthOf;
 
 namespace {
 
@@ -641,7 +641,7 @@ void AreaModel::writeReport(raw_ostream &os, hw::HWModuleOp top) {
 
 namespace {
 struct EstimateAreaPass
-    : public foldsim::impl::EstimateAreaBase<EstimateAreaPass> {
+    : public beacon::impl::EstimateAreaBase<EstimateAreaPass> {
   using EstimateAreaBase::EstimateAreaBase;
   void runOnOperation() override;
 };
@@ -672,9 +672,9 @@ void EstimateAreaPass::runOnOperation() {
     return signalPassFailure();
   }
 
-  const BeaconTarget *device = foldsim::lookupBeaconTarget(target);
+  const BeaconTarget *device = beacon::lookupBeaconTarget(target);
   if (!device) {
-    foldsim::emitUnknownBeaconTarget(design, target);
+    beacon::emitUnknownBeaconTarget(design, target);
     return signalPassFailure();
   }
   AreaModel model(design, blackBoxes, *device,

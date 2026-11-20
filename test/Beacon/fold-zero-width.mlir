@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(hw.module(foldsim-fold-zero-width))' | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(hw.module(beacon-fold-zero-width))' | FileCheck %s
 
 // A zero-width mux carries nothing: it becomes the constant, and the i1 one
 // beside it stays.

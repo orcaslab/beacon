@@ -1,5 +1,14 @@
 # Beacon — logic depth and area, before Vivado
 
+> This document moved from Vortex (`docs/designs/beacon.md`) with Beacon. The
+> tool is now its own project, [orcaslab/beacon](https://github.com/orcaslab/beacon):
+> `beacon` (the driver, `tools/beacon/beacon.py`) and `beacon-opt` (the passes,
+> `lib/Beacon/`), built on [orcaslab/circt](https://github.com/orcaslab/circt).
+> Vortex keeps its DUT catalog, baselines and gate (`ci/logic_gate.py`,
+> `make -C hw/syn/xilinx/dut <dut>-beacon`) and calls the installed `beacon`.
+> The examples name Vortex modules because Vortex is where Beacon was built;
+> it reads any CIRCT netlist.
+
 Beacon counts the logic levels of every register-to-register path
 of a Vortex design the way Vivado counts them, and the LUTs, flip-flops,
 distributed and block RAM and DSPs it maps to, in seconds and without
@@ -53,39 +62,39 @@ ci/logic_gate.py -j 2 --against-rev $(git merge-base HEAD origin/master)
 ci/logic_gate.py -b om --update-baseline
 ```
 
-Any CIRCT netlist, with `ci/beacon.py` (subcommands `run`,
+Any CIRCT netlist, with `beacon` (subcommands `run`,
 `summarize`, `paths`, `validate`, `retime-split`, `ports`, `buffers`,
 `calibrate`, `score`, `diff`, `asic-summary`, `ties`;
-`foldsim-opt` from the `PATH` or `FOLDSIM_OPT`):
+`beacon-opt` beside it, from `BEACON_OPT`, or on the `PATH`):
 
 ```bash
-ci/beacon.py run design.mlir runs/full                     # map, then count levels and area
-ci/beacon.py run runs/full/mapped.mlirbc runs/socket \
+beacon run design.mlir runs/full                     # map, then count levels and area
+beacon run runs/full/mapped.mlirbc runs/socket \
     top=VX_socket__lift black-boxes=VX_core__lift           # one unit of a mapped design
-ci/beacon.py summarize runs/full --min-levels 12           # deep end points by RTL unit
-ci/beacon.py paths runs/full --unit lsu_unit               # its paths, op by op (§5)
-ci/beacon.py validate runs/socket ep.csv --native VX_socket__lift=dut
+beacon summarize runs/full --min-levels 12           # deep end points by RTL unit
+beacon paths runs/full --unit lsu_unit               # its paths, op by op (§5)
+beacon validate runs/socket ep.csv --native VX_socket__lift=dut
 ```
 
 Or the passes directly:
 
 ```bash
-foldsim-opt design.mlir --emit-bytecode -o mapped.mlirbc \
-  --pass-pipeline='builtin.module(foldsim-beacon-map{target=virtexuplusHBM})'
-foldsim-opt mapped.mlirbc -o /dev/null --pass-pipeline='builtin.module(
-  foldsim-estimate-timing{top=VX_core_top target=virtexuplusHBM
+beacon-opt design.mlir --emit-bytecode -o mapped.mlirbc \
+  --pass-pipeline='builtin.module(beacon-map{target=virtexuplusHBM})'
+beacon-opt mapped.mlirbc -o /dev/null --pass-pipeline='builtin.module(
+  beacon-estimate-timing{top=VX_core_top target=virtexuplusHBM
     output=endpoints.csv instances=instances.csv report=report.txt
     top-paths=50 trace=lsu_unit})'
-foldsim-opt design.mlir -o /dev/null --pass-pipeline='builtin.module(
-  foldsim-beacon-map{target=virtexuplusHBM area},
-  foldsim-estimate-area{top=VX_core_top target=virtexuplusHBM
+beacon-opt design.mlir -o /dev/null --pass-pipeline='builtin.module(
+  beacon-map{target=virtexuplusHBM area},
+  beacon-estimate-area{top=VX_core_top target=virtexuplusHBM
     output=area.csv memories=area_memories.csv report=area.txt})'
 ```
 
-| `foldsim-estimate-timing` option | meaning |
+| `beacon-estimate-timing` option | meaning |
 |---|---|
 | `top=` | the top module (default: the one nothing instantiates) |
-| `target=` | the Beacon target (§4.2): `versal` (V80, default), `virtexuplus`, `virtexuplusHBM` (U55C), `zynquplus`, or `asap7` (ASIC, §4.3); map with `foldsim-beacon-map` for the same target |
+| `target=` | the Beacon target (§4.2): `versal` (V80, default), `virtexuplus`, `virtexuplusHBM` (U55C), `zynquplus`, or `asap7` (ASIC, §4.3); map with `beacon-map` for the same target |
 | `black-boxes=` | modules to treat as external, as a harness stubs them |
 | `output=`, `instances=`, `report=` | the files of §5 |
 | `min-levels=` | write only end points at or above this many levels |
@@ -95,9 +104,9 @@ foldsim-opt design.mlir -o /dev/null --pass-pipeline='builtin.module(
 | `retime-levels=` | also estimate the depth after Vivado's retiming to this period (§4.4) |
 | `ports=`, `port-modules=` | the depth at each port of the named modules' instances (§8) |
 
-| `foldsim-estimate-area` option | meaning |
+| `beacon-estimate-area` option | meaning |
 |---|---|
-| `top=`, `target=`, `black-boxes=` | as for `foldsim-estimate-timing`; map with `foldsim-beacon-map{area}` for the same target |
+| `top=`, `target=`, `black-boxes=` | as for `beacon-estimate-timing`; map with `beacon-map{area}` for the same target |
 | `output=` | the instance table of §5 (`area.csv`) |
 | `memories=` | every memory, its shape and where it goes (`area_memories.csv`) |
 | `report=` | the design's totals, the mapping's LUTs by op, the vendor IP |
@@ -106,21 +115,21 @@ foldsim-opt design.mlir -o /dev/null --pass-pipeline='builtin.module(
 
 ## 2. System architecture
 
-![Beacon system](../assets/img/beacon_system.svg)
+![Beacon system](assets/img/beacon_system.svg)
 
-The engine is two compiler passes of **foldsim** (`foldsim-opt`), built on
+The engine is two compiler passes of **Beacon** (`beacon-opt`), built on
 CIRCT like the rest of foldsim, and shipped in the foldsim prebuilt. Vortex
 never builds it. The integration is in Vortex:
 
 | Piece | Where | Role |
 |---|---|---|
-| `foldsim-beacon-map`, `foldsim-estimate-timing`, `foldsim-estimate-area` | foldsim `lib/Transforms/Beacon.cpp`, `EstimateTiming.cpp`, `EstimateArea.cpp` | map to the target's cells; count levels; count area |
-| `ci/beacon.py` | `ci/` | run Beacon on any netlist; read it by unit; compare with Vivado |
+| `beacon-map`, `beacon-estimate-timing`, `beacon-estimate-area` | `lib/Beacon/Beacon.cpp`, `EstimateTiming.cpp`, `EstimateArea.cpp` | map to the target's cells; count levels; count area |
+| `beacon` | `tools/beacon/` | run Beacon on any netlist; read it by unit; compare with Vivado |
 | `xilinx_cone_dump.tcl`, `xilinx_cone_probe.tcl`, `xilinx_wire_probe.tcl` | `hw/scripts` | Vivado probes for what levels cannot show (§8) |
 | target `beacon` | `hw/syn/xilinx/dut/common.mk` | one DUT: sources → netlist → levels and area → summary |
 | `circt_elaborate.sh` | `hw/scripts` | the lowered HW/Comb/Seq netlist, no `firtool` |
 | `gen_platform.py --emit=family` | `hw/scripts` | the family of `DEVICE`, from `hw/syn/xilinx/platforms` |
-| `beacon_summary.py` | `hw/scripts` | `beacon_summary.csv`, per-unit `beacon_units.json`, `beacon_area.txt` |
+| `beacon summary` | `tools/beacon/beacon_summary.py` | `beacon_summary.csv`, per-unit `beacon_units.json`, `beacon_area.txt` |
 | `Beacon` backend, `logic_gate.py` | `ci/synth_gate.py`, `ci/` | the gate, beside `fpga_gate` and `asic_gate` |
 | `logic_gate.yml` | `.github/workflows` | runs it on pull requests that touch RTL |
 
@@ -131,16 +140,16 @@ black boxes (`xilinx_ip_stubs.sv`).
 
 ## 3. Compiler architecture
 
-![Beacon compiler](../assets/img/beacon_compiler.svg)
+![Beacon compiler](assets/img/beacon_compiler.svg)
 
-### 3.1 `foldsim-beacon-map`
+### 3.1 `beacon-map`
 
 Every pass loads the same **target** from foldsim's target table
-(`foldsim/Beacon.h`): its cells for the mapping, its DSPs and delays for the
+(`beacon/Beacon.h`): its cells for the mapping, its DSPs and delays for the
 level count, its LUT scale for the area (§4.5). A target is named after its FPGA family or its PDK, so every
 flow passes the name it already has: the DUT flow the family
 `gen_platform.py --emit=family` gives for `DEVICE`, the ASIC flow `PDK`,
-`ci/beacon.py run` its `target=`. The mapping is a pipeline of CIRCT's
+`beacon run` its `target=`. The mapping is a pipeline of CIRCT's
 synthesis passes plus three of foldsim's, per module:
 
 1. **Inline small modules** (`hw-flatten-modules`, < 300 ops) so LUTs pack
@@ -148,12 +157,12 @@ synthesis passes plus three of foldsim's, per module:
    does. Larger modules stay instances; the estimator elaborates them.
 2. **Canonicalize and balance** mux chains (`comb-balance-mux`).
 3. **foldsim passes:**
-   - `foldsim-lower-equality`: an equality compare is XORs and an OR tree,
+   - `beacon-lower-equality`: an equality compare is XORs and an OR tree,
      which pack into LUTs;
-   - `foldsim-lower-constant-division`: a division by a constant is an
+   - `beacon-lower-constant-division`: a division by a constant is an
      extract (power of two) or a table (dividend of ≤ 10 bits), as
      synthesis writes it;
-   - `foldsim-fold-zero-width`: zero-width values are constants, which
+   - `beacon-fold-zero-width`: zero-width values are constants, which
      CIRCT's lowering otherwise rejects.
 4. **Lower to an and-inverter graph** (`convert-comb-to-synth`). Adders,
    subtracters, compares, multipliers, dividers and remainders stay
@@ -167,7 +176,7 @@ synthesis passes plus three of foldsim's, per module:
 
 The full GPU maps in about a minute and 18–20 GB.
 
-With `area`, the same lowering maps the design for `foldsim-estimate-area`
+With `area`, the same lowering maps the design for `beacon-estimate-area`
 instead. A depth-oriented cover duplicates logic to save levels, so its
 cells are no measure of area; the area mapping is what Vivado does off the
 critical paths:
@@ -181,7 +190,7 @@ critical paths:
 
 A DUT of the catalog maps for area in 1–16 s.
 
-### 3.2 `foldsim-estimate-timing`
+### 3.2 `beacon-estimate-timing`
 
 The estimator works on the elaborated design: one **context** per instance,
 and one **node** per (context, value, bit). It never enumerates paths:
@@ -200,7 +209,7 @@ and one **node** per (context, value, bit). It never enumerates paths:
 Time and memory are linear in the design's bits: the full GPU runs in
 16–21 s and 2.7 GB, a DUT of the catalog in seconds.
 
-### 3.3 `foldsim-estimate-area`
+### 3.3 `beacon-estimate-area`
 
 The area estimator counts each module's own ops once (§4.5), then sums the
 instance tree from `top`: a module's total is its own resources and its
@@ -399,7 +408,7 @@ memories' read multiplexers, are not scaled; `lut-scale=1` gives the raw cover.
 | `beacon_summary.csv` | the DUT flow's one row: max levels, end points ≥ 12, ≥ 8, all, and the area |
 | `paths.jsonl` | `paths=`: one JSON line per pair of start and end registers whose deepest bit has at least `path-levels` levels: that bit's levels, the pair's bit count, start, end, and `ops`, the path from the end back to the start as `[levels, kind, fanout, instance id, name, source]` |
 | `beacon_units.json` | the deepest end point of every unit at ≥ 8 levels, and the 10 deepest paths |
-| `beacon_paths.txt` | the DUT flow's `paths.jsonl` at ≥ 8 levels, by unit (`ci/beacon.py paths` for any run) |
+| `beacon_paths.txt` | the DUT flow's `paths.jsonl` at ≥ 8 levels, by unit (`beacon paths` for any run) |
 | `area.csv` | one row per instance, depth first: `depth,path,module`, its own `lut,lutram,ff,bram,uram,dsp,macros`, then its subtree's (`total_*`); `lut` is logic LUTs, scaled (§4.5) |
 | `area_memories.csv` | one row per memory: its instance, name, depth, width, read, write and read-write ports, read latency, `ram_style`, placement and cost |
 | `area.txt` | the design's totals, the mapping's LUTs by op before scaling, and the vendor IP |
@@ -465,11 +474,11 @@ On the full GPU, the 3,283 pairs at ≥ 12 levels fold into 169 paths in
    repository's);
 2. `circt_elaborate.sh` into `beacon/netlist.mlir`, the FP IPs as
    black boxes, with every op's source location;
-3. `foldsim-beacon-map`, then `foldsim-estimate-timing`; and
-   `foldsim-beacon-map{area}`, then `foldsim-estimate-area`; all with
+3. `beacon-map`, then `beacon-estimate-timing`; and
+   `beacon-map{area}`, then `beacon-estimate-area`; all with
    `target=` the family `gen_platform.py --device=$(DEVICE) --emit=family`
    names;
-4. `beacon_summary.py`: `beacon_summary.csv`, `beacon_units.json`,
+4. `beacon summary`: `beacon_summary.csv`, `beacon_units.json`,
    `beacon_paths.txt` and `beacon_area.txt` (§5).
 
 The ASIC flow has the same target, with the same sources, defines and SRAM
@@ -501,7 +510,7 @@ four minutes, and checks each against `ci/baselines/synthesis/beacon/`:
   distributed and block RAM shows as both columns moving.
 
 - the **harness**: the instance-input bits the DUT top ties to constants
-  (`ci/beacon.py ties`, column `tied`) must not change from the baseline.
+  (`beacon ties`, column `tied`) must not change from the baseline.
   Vivado and Yosys fold the logic behind a tied input; Beacon maps module
   by module and does not, so a harness edit makes the synthesis gates
   measure a different design while Beacon's numbers stay put. A tied count
@@ -633,7 +642,7 @@ fixed while the change is still open, and synthesis runs once, to confirm.
    gated then, and none can be recorded.
 
    Besides the per-unit verdict against the golden baseline, each build
-   writes `beacon_diff.txt` (`ci/beacon.py diff`). Its headline is the
+   writes `beacon_diff.txt` (`beacon diff`). Its headline is the
    deepest register, the mean of the 50 deepest and the count at the watch
    threshold, before and after; then it lists the registers that got deeper,
    new deep registers, and the ones that got shallower, then the units whose
@@ -651,13 +660,13 @@ fixed while the change is still open, and synthesis runs once, to confirm.
    register does not (0.29). A new register below 12 is listed but passes,
    since a rename looks the same.
 
-3. **Fix.** `ci/beacon.py paths <build>/beacon --unit <unit>` prints a deep
+3. **Fix.** `beacon paths <build>/beacon --unit <unit>` prints a deep
    unit's paths op by op. Edit, and repeat step 2 until nothing got deeper,
    or until each deeper path is one the change intends.
 
 4. **Confirm.** Run synthesis once per change, not once per edit: the
    `fpga_gate` or `asic_gate` builds of the DUTs whose depth moved. Then feed
-   the result back. `ci/beacon.py validate <build>/beacon ep.csv` compares the
+   the result back. `beacon validate <build>/beacon ep.csv` compares the
    run with Vivado's end point table, and a disagreement there is a Beacon bug
    to fix in foldsim.
 
@@ -671,7 +680,7 @@ design (§9).
 
 Against Vivado, per RTL register or memory: Beacon's deepest bit
 against Vivado's deepest failing path and worst slack, on seven V80 datasets
-with no new Vivado runs (`ci/beacon.py validate`):
+with no new Vivado runs (`beacon validate`):
 
 | Dataset | Vivado run | Spearman vs levels | Spearman vs slack | ≥ 12: precision / recall |
 |---|---|---|---|---|
@@ -710,7 +719,7 @@ current RTL. Beacon runs a DUT in 2–52 s, where Yosys and OpenSTA take
 ### 7.1 Learned calibration (advisory)
 
 Levels rank Vivado's near-critical registers at about half the ceiling set
-by one Vivado run predicting another. `ci/beacon.py score` ranks them with a
+by one Vivado run predicting another. `beacon score` ranks them with a
 calibration learned from routed U55C builds instead: gradient-boosted trees
 on 38 per-register features, all from Beacon's own outputs (no Vivado input):
 
@@ -734,13 +743,13 @@ under 0 ns. A register never ranks safer for being deeper (a monotone
 constraint on levels). `calibrate` trains them with scikit-learn and writes
 them as plain JSON trees; `score` evaluates them in pure Python, in about
 4 s for a core. The model trained on the 28 builds below ships as
-[`hw/scripts/beacon_calibration_u55c.json`](../../hw/scripts/beacon_calibration_u55c.json);
+[`tools/beacon/calibrations/u55c.json`](../tools/beacon/calibrations/u55c.json);
 it applies to the U55C, its slacks at 300 MHz.
 
 ```bash
-ci/beacon.py score build_core/beacon hw/scripts/beacon_calibration_u55c.json \
+beacon score build_core/beacon calibrations/u55c.json \
     --top 30 --csv score.csv
-ci/beacon.py calibrate cal.json --holdout \
+beacon calibrate cal.json --holdout \
     --build build_core/beacon build_core/ep.csv core \
     --build build_cache/beacon build_cache/ep.csv cache
 ```
@@ -915,10 +924,10 @@ the DUT flow). Small modules are inlined by the mapping, so keep them with
 `run --keep`:
 
 ```bash
-ci/beacon.py run --keep VX_elastic_buffer design.mlir runs/eb \
+beacon run --keep VX_elastic_buffer design.mlir runs/eb \
     port-modules=VX_elastic_buffer
-ci/beacon.py buffers runs/eb      # the OUT_BUF advisor
-ci/beacon.py ports runs/eb        # every kept module, by unit
+beacon buffers runs/eb      # the OUT_BUF advisor
+beacon ports runs/eb        # every kept module, by unit
 ```
 
 - The **buffer advisor** lists the `VX_elastic_buffer`s that pass a deep

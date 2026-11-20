@@ -1,4 +1,4 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(hw.module(foldsim-lower-constant-division))' | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(hw.module(beacon-lower-constant-division))' | FileCheck %s
 
 // CHECK-LABEL: hw.module @Top
 // x / 16: the bits above 4, zero-extended.

@@ -1,5 +1,5 @@
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=virtexuplusHBM},foldsim-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
-// RUN: foldsim-opt %s --pass-pipeline='builtin.module(foldsim-beacon-map{target=asap7},foldsim-estimate-timing{output=- report= top=Top target=asap7})' -o /dev/null | FileCheck %s --check-prefix=ASAP7
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=virtexuplusHBM},beacon-estimate-timing{output=- report= top=Top target=virtexuplusHBM})' -o /dev/null | FileCheck %s
+// RUN: beacon-opt %s --pass-pipeline='builtin.module(beacon-map{target=asap7},beacon-estimate-timing{output=- report= top=Top target=asap7})' -o /dev/null | FileCheck %s --check-prefix=ASAP7
 
 // A superpage mask, all ones shifted left by a 2-bit level times 9, depends on
 // the two level bits alone: one LUT per bit, not a product, compares and a
