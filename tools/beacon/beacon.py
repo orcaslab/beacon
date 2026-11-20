@@ -256,8 +256,9 @@ def cmd_run(args):
                       + threads))
     files = ["output=%s/endpoints.csv" % args.out,
              "instances=%s/instances.csv" % args.out,
-             "report=%s/report.txt" % args.out,
-             "paths=%s/paths.jsonl" % args.out]
+             "report=%s/report.txt" % args.out]
+    if not args.no_paths:
+        files.append("paths=%s/paths.jsonl" % args.out)
     if any(o.startswith("port-modules=") for o in args.options):
         files.append("ports=%s/ports.csv" % args.out)
     opts = " ".join(files + args.options)
@@ -1392,6 +1393,8 @@ def main():
                    "cells of target= (versal by default)")
     p.add_argument("--no-threads", action="store_true",
                    help="map on one thread: half the peak memory, twice the time")
+    p.add_argument("--no-paths", action="store_true",
+                   help="write no paths.jsonl (the deep paths op by op)")
     p.add_argument("--keep", action="append", default=[], metavar="MODULE",
                    help="keep MODULE's instances through inlining, to report "
                    "their ports with port-modules=MODULE (repeatable)")
