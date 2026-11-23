@@ -47,6 +47,13 @@ the LUT mapper's arrival times and carry blocks, `LowerWordToBits`, and the
 already have a build of it (step 4 of its README). Tested on Ubuntu 24.04
 (x86-64) with clang 18, CMake 3.31, Ninja 1.11 and Python 3.12.
 
+The CIRCT commit this Beacon was tested with is recorded as the submodule
+`third_party/circt`; `git submodule status` prints it. The build does not read
+the submodule: it takes CIRCT from `-DCIRCT_DIR`, so the steps below work on a
+plain clone. To build exactly that commit, check it out in step 2
+(`git -C circt checkout <commit>`). Do not clone Beacon with `--recursive`:
+that fetches CIRCT and its LLVM submodule as well.
+
 **1. Prerequisites.**
 
 ```sh
