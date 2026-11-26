@@ -94,6 +94,74 @@ def LowerConstantDivision
   let dependentDialects = ["circt::comb::CombDialect", "circt::hw::HWDialect"];
 }
 
+def LowerComplement : Pass<"beacon-lower-complement", "::circt::hw::HWModuleOp"> {
+  let summary = "Rewrite all-ones minus a value as its complement";
+  let description = [{
+    Rewrites `comb.sub` of an all-ones constant minus `x` as
+    `comb.xor` of `x` with all ones: in two's complement 2^n - 1 - x is ~x,
+    no carry. Elaborated designs make it of every dynamic index into an
+    array declared `[N]` (`[0:N-1]`), which hw arrays index from the other
+    end, and synthesis folds it to inverters, which LUTs and library cells
+    absorb. Kept as a subtraction it would be timed as a carry chain (an
+    8-bit carry block on an FPGA, `log2` of the width in stages on an
+    ASIC) on every path through the index.
+  }];
+  let dependentDialects = ["circt::comb::CombDialect", "circt::hw::HWDialect"];
+}
+
+def InjectInPlace : Pass<"beacon-inject-in-place", "::circt::hw::HWModuleOp"> {
+  let summary = "Update an array element read back at the index it writes in place";
+  let description = [{
+    Rewrites `hw.array_inject %a[%i], F(hw.array_get %a[%i])`, an element
+    updated from its own value (`a[i][j] <= 1`, a field of `a[i]`
+    written), as an array whose element `s` is
+    `mux(%i == s, F(%a[s]), %a[s])`. Both are the same function, but
+    `hw-aggregate-to-comb` lowers the first with a full read multiplexer of
+    `%a` at `%i` under `F` and a decoder over it, while synthesis, which
+    writes each element under its own enable, never reads the element back
+    through the index: each element's `F` takes that element. Applied when
+    `F` (the ops between the read and the write) has at most `max-ops` ops
+    and its copies, one per element, at most `max-copied-ops`.
+  }];
+  let options = [
+    Option<"maxOps", "max-ops", "unsigned", "32",
+           "The most ops between the element's read and its write">,
+    Option<"maxCopiedOps", "max-copied-ops", "unsigned", "65536",
+           "The most ops the per-element copies may add">,
+  ];
+  let dependentDialects = ["circt::comb::CombDialect", "circt::hw::HWDialect"];
+}
+
+def InlineShared : Pass<"beacon-inline-shared", "::mlir::ModuleOp"> {
+  let summary = "Mark the shared module bodies to inline into each instance";
+  let description = [{
+    Marks with `hw.inline` private modules that two or more instances share
+    (one body, identical parameters), so that `hw-flatten-modules` with
+    `hw-inline-marked` maps a copy of each in every instance's context, as
+    synthesis maps a flattened design. A shared body mapped once, apart from
+    its instances, takes its input ports and its instances' outputs at
+    arrival 0 and packs no cell across its boundary, so a path through it is
+    deeper than the same netlist mapped flat.
+
+    Copies cost memory: inlining a body of `n` ops (after the inlining below
+    it) shared by `k` instances adds `(k - 1) * n` ops. The pass marks the
+    cheapest bodies first while what they add stays within a budget:
+    `growth` percent of the ops the mapping would see without it, and at
+    least `min-ops`. A small design is flattened whole; on a whole GPU the
+    largest bodies (a socket, a core block) stay shared and map once. Bodies
+    `hw-flatten-modules` inlines anyway (one instance, or fewer than 300
+    ops) cost nothing here.
+  }];
+  let options = [
+    Option<"growth", "growth", "unsigned", "25",
+           "The ops the copies may add, in percent of the design's (0: none)">,
+    Option<"minOps", "min-ops", "unsigned", "200000",
+           "The ops the copies may add at least (with growth > 0)">,
+    Option<"report", "report", "std::string", "\"\"",
+           "Where to write each shared body's decision (- for stdout)">,
+  ];
+}
+
 def BeaconMap : Pass<"beacon-map", "::mlir::ModuleOp"> {
   let summary = "Map a design to a Beacon target's cells";
   let description = [{
@@ -101,7 +169,9 @@ def BeaconMap : Pass<"beacon-map", "::mlir::ModuleOp"> {
     `beacon-estimate-timing` with the same `target`: 6-input LUTs on an FPGA
     family, 3-input cuts, each one library cell, on an ASIC PDK. Modules of
     fewer than 300 ops are inlined so cells pack across their boundaries, as
-    Vivado maps a flattened design; the mapping is depth-oriented, as Vivado
+    Vivado maps a flattened design, and so are bodies that instances share,
+    while their copies stay within `inline-shared` percent of the design's
+    ops (`beacon-inline-shared`), so each instance maps in its own context; the mapping is depth-oriented, as Vivado
     restructures chains of associative logic and priority muxes into trees;
     equality comparisons become logic so they pack with their neighbours;
     adders, order comparisons, multipliers and dividers stay word-level, as
@@ -135,6 +205,11 @@ def BeaconMap : Pass<"beacon-map", "::mlir::ModuleOp"> {
     Option<"arrivals", "arrivals", "std::string", "\"\"",
            "Arrival times at the modules' ports, from beacon-estimate-timing's "
            "`arrivals` over a first mapping (JSON); none: they arrive at 0">,
+    Option<"inlineShared", "inline-shared", "unsigned", "25",
+           "For depth, the ops that copies of shared module bodies, each "
+           "instance mapped in its own context, may add, in percent of the "
+           "design's (beacon-inline-shared growth; 0: shared bodies are "
+           "mapped once)">,
   ];
 }
 

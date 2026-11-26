@@ -22,6 +22,8 @@
 #include "circt/Dialect/HW/HWOps.h"
 #include "circt/Dialect/Seq/SeqOps.h"
 #include "circt/Dialect/Synth/SynthOps.h"
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Support/FileUtilities.h"
@@ -44,6 +46,8 @@ namespace beacon {
 #define GEN_PASS_DEF_KEEPMODULES
 #define GEN_PASS_DEF_LOWEREQUALITY
 #define GEN_PASS_DEF_LOWERCONSTANTDIVISION
+#define GEN_PASS_DEF_LOWERCOMPLEMENT
+#define GEN_PASS_DEF_INJECTINPLACE
 #include "beacon/Passes.h.inc"
 } // namespace beacon
 
@@ -1758,6 +1762,114 @@ struct BoundaryArrivalsPass
     : public beacon::impl::BoundaryArrivalsBase<BoundaryArrivalsPass> {
   using BoundaryArrivalsBase::BoundaryArrivalsBase;
   void runOnOperation() override;
+};
+
+struct LowerComplementPass
+    : public beacon::impl::LowerComplementBase<LowerComplementPass> {
+  void runOnOperation() override {
+    getOperation().walk([](comb::SubOp op) {
+      auto ones = op.getLhs().getDefiningOp<hw::ConstantOp>();
+      if (!ones || !ones.getValue().isAllOnes())
+        return;
+      OpBuilder b(op);
+      auto x = comb::XorOp::create(b, op.getLoc(), op.getRhs(), ones,
+                                   op.getTwoState());
+      if (auto hint = op->getAttr("sv.namehint"))
+        x->setAttr("sv.namehint", hint);
+      op.replaceAllUsesWith(x.getResult());
+      op.erase();
+    });
+  }
+};
+
+struct InjectInPlacePass
+    : public beacon::impl::InjectInPlaceBase<InjectInPlacePass> {
+  using InjectInPlaceBase::InjectInPlaceBase;
+
+  /// The ops of `value`'s cone that depend on a read of `array` at `index`,
+  /// in block order, and that read; failure if there is none, or the cone
+  /// leaves comb logic or has more than maxOps ops.
+  LogicalResult cone(Value value, Value array, Value index,
+                     SmallVectorImpl<Operation *> &ops, hw::ArrayGetOp &read) {
+    DenseMap<Operation *, bool> depends; // op -> depends on the read
+    unsigned visited = 0;
+    bool tooBig = false;
+    std::function<bool(Value)> visit = [&](Value v) -> bool {
+      Operation *op = v.getDefiningOp();
+      if (!op || tooBig)
+        return false;
+      auto it = depends.find(op);
+      if (it != depends.end())
+        return it->second;
+      if (auto get = dyn_cast<hw::ArrayGetOp>(op);
+          get && get.getInput() == array && get.getIndex() == index) {
+        read = get;
+        return depends[op] = true;
+      }
+      depends[op] = false;
+      if (!isa<comb::CombDialect>(op->getDialect()) &&
+          !isa<hw::ArrayGetOp, hw::StructExtractOp, hw::StructCreateOp,
+               hw::BitcastOp>(op))
+        return false;
+      if (++visited > maxOps) {
+        tooBig = true;
+        return false;
+      }
+      bool dep = false;
+      for (Value operand : op->getOperands())
+        dep |= visit(operand);
+      depends[op] = dep;
+      if (dep)
+        ops.push_back(op);
+      return dep;
+    };
+    if (!visit(value) || tooBig || !read)
+      return failure();
+    // Post-order is an order in which each op follows its operands.
+    llvm::erase_if(ops, [&](Operation *op) { return op == read; });
+    return success();
+  }
+
+  void runOnOperation() override {
+    SmallVector<hw::ArrayInjectOp> injects;
+    getOperation().walk([&](hw::ArrayInjectOp op) { injects.push_back(op); });
+    for (auto inject : injects) {
+      Value array = inject.getInput(), index = inject.getIndex();
+      if (matchPattern(index, m_Constant()))
+        continue;
+      SmallVector<Operation *> ops;
+      hw::ArrayGetOp read;
+      if (failed(cone(inject.getElement(), array, index, ops, read)))
+        continue;
+      auto type = cast<hw::ArrayType>(array.getType());
+      uint64_t n = type.getNumElements();
+      if (n * (ops.size() + 3) > maxCopiedOps)
+        continue;
+      OpBuilder b(inject);
+      Location loc = inject.getLoc();
+      auto indexType = cast<IntegerType>(index.getType());
+      SmallVector<Value> elements; // index n - 1 first, as hw.array_create
+      for (uint64_t k = n; k-- > 0;) {
+        if (indexType.getWidth() < 64 && k >> indexType.getWidth())
+          continue;
+        auto s = hw::ConstantOp::create(b, loc, indexType, k);
+        Value old = hw::ArrayGetOp::create(b, loc, array, s);
+        IRMapping map;
+        map.map(read.getResult(), old);
+        for (Operation *op : ops)
+          b.clone(*op, map);
+        Value updated = map.lookup(inject.getElement());
+        Value hit = comb::ICmpOp::create(b, loc, comb::ICmpPredicate::eq,
+                                         index, s);
+        elements.push_back(comb::MuxOp::create(b, loc, hit, updated, old));
+      }
+      if (elements.size() != n)
+        continue; // An index too narrow to reach every element: left alone.
+      inject.replaceAllUsesWith(
+          hw::ArrayCreateOp::create(b, loc, elements).getResult());
+      inject.erase();
+    }
+  }
 };
 
 struct LowerConstantDivisionPass

@@ -8,12 +8,18 @@
 
 #include "beacon/Beacon.h"
 #include "beacon/Passes.h"
+#include "circt/Dialect/HW/HWInstanceGraph.h"
+#include "circt/Dialect/HW/HWOps.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/FileUtilities.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "mlir/Pass/PassRegistry.h"
+#include "llvm/ADT/PostOrderIterator.h"
 #include <string>
 
 namespace beacon {
 #define GEN_PASS_DEF_BEACONMAP
+#define GEN_PASS_DEF_INLINESHARED
 #include "beacon/Passes.h.inc"
 } // namespace beacon
 
@@ -63,18 +69,27 @@ const BeaconTarget kTargets[] = {
 } // namespace
 
 std::string beacon::beaconMapPipeline(const BeaconTarget &target, bool area,
-                                       unsigned carryBlockSize, llvm::StringRef arrivals) {
-  // Cells pack across small modules on a critical path; area keeps every
-  // module, so each instance's resources stay its own.
+                                       unsigned carryBlockSize, llvm::StringRef arrivals,
+                                       unsigned inlineShared) {
+  // Cells pack across small modules on a critical path, and across a body
+  // instances share, whose every instance maps in its own context; area
+  // keeps every module, so each instance's resources stay its own.
   std::string pipeline =
       area ? "hw.module(hw-bypass-inner-symbols,canonicalize,cse,"
-           : "hw-flatten-modules{hw-inline-all=false hw-inline-small "
-             "hw-inline-with-state hw-small-threshold=300},";
+           : "beacon-inline-shared{growth=" + std::to_string(inlineShared) +
+                 "},hw-flatten-modules{hw-inline-all=false hw-inline-small "
+                 "hw-inline-with-state hw-inline-marked "
+                 "hw-small-threshold=300},";
   if (!area && !arrivals.empty())
     pipeline += "beacon-boundary-arrivals{file=" + arrivals.str() + "},";
   if (!area)
     pipeline += "hw.module(hw-bypass-inner-symbols,canonicalize,cse,"
                 "comb-balance-mux,";
+  // For depth, a subtraction from all ones is a complement, and an array
+  // element updated from its own value is updated in place, as synthesis
+  // maps both.
+  if (!area)
+    pipeline += "beacon-lower-complement,beacon-inject-in-place,";
   pipeline += "beacon-lower-equality,beacon-lower-constant-division,"
               "hw-aggregate-to-comb,";
   // For depth, the equalities hw-aggregate-to-comb makes of an array written
@@ -105,8 +120,10 @@ std::string beacon::beaconMapPipeline(const BeaconTarget &target, bool area,
 namespace {
 
 std::string mapPipeline(const BeaconTarget &target, bool area,
-                        unsigned carryBlockSize, llvm::StringRef arrivals) {
-  return beacon::beaconMapPipeline(target, area, carryBlockSize, arrivals);
+                        unsigned carryBlockSize, llvm::StringRef arrivals,
+                        unsigned inlineShared) {
+  return beacon::beaconMapPipeline(target, area, carryBlockSize, arrivals,
+                                   inlineShared);
 }
 
 struct BeaconMapPass : public beacon::impl::BeaconMapBase<BeaconMapPass> {
@@ -115,7 +132,7 @@ struct BeaconMapPass : public beacon::impl::BeaconMapBase<BeaconMapPass> {
   void getDependentDialects(DialectRegistry &registry) const override {
     OpPassManager pm(ModuleOp::getOperationName());
     if (const BeaconTarget *t = beacon::lookupBeaconTarget(target))
-      if (succeeded(parsePassPipeline(mapPipeline(*t, area, carryBlockSize, arrivals), pm)))
+      if (succeeded(parsePassPipeline(mapPipeline(*t, area, carryBlockSize, arrivals, inlineShared), pm)))
         pm.getDependentDialects(registry);
   }
 
@@ -126,9 +143,129 @@ struct BeaconMapPass : public beacon::impl::BeaconMapBase<BeaconMapPass> {
       return signalPassFailure();
     }
     OpPassManager pm(ModuleOp::getOperationName());
-    if (failed(parsePassPipeline(mapPipeline(*t, area, carryBlockSize, arrivals), pm)) ||
+    if (failed(parsePassPipeline(mapPipeline(*t, area, carryBlockSize, arrivals, inlineShared), pm)) ||
         failed(runPipeline(pm, getOperation())))
       signalPassFailure();
+  }
+};
+
+/// Marks the shared bodies hw-flatten-modules{hw-inline-marked} inlines.
+struct InlineSharedPass
+    : public beacon::impl::InlineSharedBase<InlineSharedPass> {
+  using InlineSharedBase::InlineSharedBase;
+  using Node = circt::igraph::InstanceGraphNode;
+
+  /// One line per shared body: name, instances, ops, the ops its copies
+  /// add, and whether it is inlined; then the totals.
+  void writeReport(ArrayRef<Node *> order, const DenseSet<Node *> &inlined,
+                   const DenseSet<Node *> &kept,
+                   DenseMap<Node *, uint64_t> &ops, uint64_t base,
+                   uint64_t budget, uint64_t added) {
+    std::string err;
+    auto out = mlir::openOutputFile(report, &err);
+    if (!out) {
+      getOperation().emitError(err);
+      return signalPassFailure();
+    }
+    auto &os = out->os();
+    os << "module,instances,ops,added,inlined\n";
+    for (auto *node : order) {
+      unsigned uses = node->getNumUses();
+      if (uses < 2 || !(inlined.count(node) || kept.count(node)))
+        continue;
+      os << node->getModule().getModuleName() << "," << uses << ","
+         << ops[node] << "," << (uses - 1) * (ops[node] - 1) << ","
+         << (inlined.count(node) ? 1 : 0) << "\n";
+    }
+    os << "# base " << base << " budget " << budget << " added " << added
+       << " kept " << kept.size() << "\n";
+    out->keep();
+  }
+
+  void runOnOperation() override {
+    auto &graph = getAnalysis<circt::hw::InstanceGraph>();
+    // Children before parents.
+    SmallVector<circt::igraph::InstanceGraphNode *> order;
+    DenseSet<circt::igraph::InstanceGraphNode *> seen;
+    for (auto *start : graph)
+      for (auto *node : llvm::post_order(start))
+        if (seen.insert(node).second)
+          order.push_back(node);
+
+    // Each module's own ops, less its instances; what hw-flatten-modules
+    // inlines anyway (one instance, or a body of fewer than 300 ops).
+    DenseMap<circt::igraph::InstanceGraphNode *, uint64_t> own;
+    DenseSet<circt::igraph::InstanceGraphNode *> inlined, candidates;
+    for (auto *node : order) {
+      auto module =
+          dyn_cast_or_null<circt::hw::HWModuleOp>(node->getModule().getOperation());
+      uint64_t size = 0;
+      if (module)
+        module.getBodyBlock()->walk([&](Operation *op) {
+          if (!isa<circt::hw::InstanceOp>(op))
+            ++size;
+        });
+      own[node] = size;
+      if (!module || !module.isPrivate() || node->noUses())
+        continue;
+      if (node->getNumUses() == 1)
+        inlined.insert(node);
+      else
+        candidates.insert(node);
+    }
+    // The ops of each module once the inlining below it is done (an
+    // instance it keeps counts one op).
+    DenseMap<circt::igraph::InstanceGraphNode *, uint64_t> ops;
+    auto measure = [&] {
+      for (auto *node : order) {
+        uint64_t size = own[node];
+        for (auto *record : *node) {
+          auto *child = record->getTarget();
+          size += inlined.count(child) ? ops[child] : 1;
+        }
+        ops[node] = size;
+      }
+    };
+    measure();
+    // Small shared bodies, which hw-flatten-modules inlines too.
+    for (auto *node : order)
+      if (candidates.count(node) && ops[node] < 300) {
+        inlined.insert(node);
+        candidates.erase(node);
+        measure();
+      }
+    uint64_t base = 0;
+    for (auto *node : order)
+      if (!inlined.count(node))
+        base += ops[node];
+    uint64_t budget =
+        growth ? std::max<uint64_t>(minOps, base * growth / 100) : 0;
+
+    // The cheapest body first, while the budget lasts.
+    auto attr = StringAttr::get(&getContext(), "hw.inline");
+    uint64_t added = 0;
+    while (!candidates.empty()) {
+      circt::igraph::InstanceGraphNode *best = nullptr;
+      uint64_t bestCost = 0;
+      for (auto *node : order) {
+        if (!candidates.count(node))
+          continue;
+        uint64_t cost = (node->getNumUses() - 1) * (ops[node] - 1);
+        if (!best || cost < bestCost)
+          best = node, bestCost = cost;
+      }
+      if (added + bestCost > budget)
+        break;
+      added += bestCost;
+      candidates.erase(best);
+      inlined.insert(best);
+      best->getModule().getOperation()->setAttr(attr,
+                                                UnitAttr::get(&getContext()));
+      measure();
+    }
+    if (!report.empty())
+      writeReport(order, inlined, candidates, ops, base, budget, added);
+    markAllAnalysesPreserved();
   }
 };
 

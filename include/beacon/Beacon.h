@@ -57,6 +57,11 @@ struct BeaconTarget {
   double lutScale = 1.0;
 };
 
+/// The default `growth` of `beacon-inline-shared` (`inline-shared` of
+/// `beacon-map`): the ops that copies of shared module bodies may add, in
+/// percent of the design's.
+constexpr unsigned kInlineSharedGrowth = 25;
+
 /// The target of a name, or null.
 const BeaconTarget *lookupBeaconTarget(llvm::StringRef name);
 
@@ -65,9 +70,13 @@ void emitUnknownBeaconTarget(mlir::Operation *op, llvm::StringRef name);
 
 /// The pass pipeline (on a builtin.module) of `beacon-map` for
 /// `target`: for depth, or for area.
+/// For depth, module bodies that instances share are inlined into each of
+/// them while their copies add at most `inlineShared` percent of the
+/// design's ops (`beacon-inline-shared`).
 std::string beaconMapPipeline(const BeaconTarget &target, bool area,
                               unsigned carryBlockSize = 0,
-                              llvm::StringRef arrivals = {});
+                              llvm::StringRef arrivals = {},
+                              unsigned inlineShared = kInlineSharedGrowth);
 
 /// The levels of the deepest end point of the design `top` elaborates in
 /// `design`, a design mapped by `beaconMapPipeline(target, false)`, as

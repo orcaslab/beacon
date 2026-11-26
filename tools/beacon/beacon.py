@@ -245,7 +245,10 @@ def cmd_run(args):
     threads = ["--mlir-disable-threading"] if args.no_threads else []
     if not args.design.endswith(".mlirbc"):
         mapped = os.path.join(args.out, "mapped.mlirbc")
-        pipeline = "beacon-map{%s}" % target
+        mapopts = target
+        if args.inline_shared is not None:
+            mapopts += " inline-shared=%d" % args.inline_shared
+        pipeline = "beacon-map{%s}" % mapopts
         if args.keep:
             # Keep these modules' instances through inlining, so their ports
             # can be reported (ports=, port-modules=).
@@ -1395,6 +1398,11 @@ def main():
                    help="map on one thread: half the peak memory, twice the time")
     p.add_argument("--no-paths", action="store_true",
                    help="write no paths.jsonl (the deep paths op by op)")
+    p.add_argument("--inline-shared", type=int, metavar="OPS",
+                   help="map a module body instances share in each instance "
+                   "while its copies add at most OPS ops (beacon-map "
+                   "inline-shared; 0: map shared bodies once); default: "
+                   "beacon-map's")
     p.add_argument("--keep", action="append", default=[], metavar="MODULE",
                    help="keep MODULE's instances through inlining, to report "
                    "their ports with port-modules=MODULE (repeatable)")

@@ -154,9 +154,27 @@ synthesis passes plus three of foldsim's, per module:
 
 1. **Inline small modules** (`hw-flatten-modules`, < 300 ops) so LUTs pack
    across buffers, arbiters and switches, as Vivado's flattened synthesis
-   does. Larger modules stay instances; the estimator elaborates them.
+   does, and **shared bodies** (`beacon-inline-shared`): a module body two
+   or more instances share (same parameters) is inlined into each instance,
+   so every instance maps in its own context. Mapped once, apart from its
+   instances, a body takes its ports at arrival 0 and packs nothing across
+   them, and a path through it reads deeper than the flat netlist (a TLB cam
+   shared by two MMUs read 14 levels at the client buffers, 8 inlined).
+   Copies cost memory: the cheapest bodies go first while the ops they add
+   stay within 25 % of the design's (`beacon-map` `inline-shared`, at least
+   200,000 ops), so a DUT flattens whole and a whole GPU keeps its largest
+   bodies (a socket, a core block) as instances, which the estimator
+   elaborates.
 2. **Canonicalize and balance** mux chains (`comb-balance-mux`).
-3. **foldsim passes:**
+3. **Rewrite what synthesis folds** (depth only):
+   - `beacon-lower-complement`: all ones minus `x`, which every dynamic
+     index into an array declared `[N]` carries, is `~x`, not a carry chain;
+   - `beacon-inject-in-place`: an element updated from its own value
+     (`a[i][j] <= 1`: read `a[i]`, update, write at `i`) becomes a per-element
+     update, `mux(i == s, F(a[s]), a[s])`, as synthesis writes each element
+     under its own enable, instead of a full read multiplexer at `i` under the
+     update.
+4. **foldsim passes:**
    - `beacon-lower-equality`: an equality compare is XORs and an OR tree,
      which pack into LUTs;
    - `beacon-lower-constant-division`: a division by a constant is an
@@ -164,14 +182,14 @@ synthesis passes plus three of foldsim's, per module:
      synthesis writes it;
    - `beacon-fold-zero-width`: zero-width values are constants, which
      CIRCT's lowering otherwise rejects.
-4. **Lower to an and-inverter graph** (`convert-comb-to-synth`). Adders,
+5. **Lower to an and-inverter graph** (`convert-comb-to-synth`). Adders,
    subtracters, compares, multipliers, dividers and remainders stay
    word-level: the estimator models them as the carry chains, DSPs and
    tables Vivado builds, which a LUT mapping of their gates would not
    reproduce.
-5. **Depth-optimize** the graph: timing-aware variadic lowering, maximum
+6. **Depth-optimize** the graph: timing-aware variadic lowering, maximum
    AND cover, SOP balancing, structural hashing.
-6. **Map to the target's cells** (`synth-generic-lut-mapper`, timing
+7. **Map to the target's cells** (`synth-generic-lut-mapper`, timing
    strategy): 6-input LUTs on the FPGA families, 3-input cuts on ASAP7.
 
 The full GPU maps in about a minute and 18–20 GB.
