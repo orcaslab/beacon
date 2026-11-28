@@ -1,0 +1,4 @@
+[submodule "third_party/circt"]
+	path = third_party/circt
+	url = https://github.com/orcaslab/circt.git
+	shallow = true
